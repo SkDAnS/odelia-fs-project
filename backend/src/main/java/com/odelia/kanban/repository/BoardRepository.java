@@ -27,7 +27,7 @@ public interface BoardRepository extends CrudRepository<Board, Long> {
     List<Board> findAllSortedByName();
 
     /**
-     * The boards of one user - what {@code GET /api/boards} returns, where
+     * The boards owned by one user; shared boards are added by the resource, where
      * {@code owner} is the {@code preferred_username} taken from the JWT.
      */
     List<Board> findByOwnerOrderByNameAsc(String owner);

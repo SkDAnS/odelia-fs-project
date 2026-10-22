@@ -6,6 +6,12 @@ export interface Board {
   createdAt?: string;
 }
 
+export interface BoardMember {
+  id?: number;
+  boardId: number;
+  username: string;
+}
+
 /** Mirrors com.odelia.kanban.entity.BoardList: a column of a board. */
 export interface BoardList {
   id?: number;

@@ -1,9 +1,11 @@
 # Kanban — Full-Stack Course Project
 
+**Projet Dev App — Binôme : Anas et Jan.**
+
 OpenLiberty (Jakarta EE 11 Web Profile + MicroProfile 7.1) + Angular 20 + PostgreSQL.
 
 **The board is secured with Keycloak and MicroProfile JWT, and every board
-belongs to the person who created it.**
+belongs to the person who created it, who can share it with other users.**
 
 ## Layout
 
@@ -59,15 +61,21 @@ mvn liberty:dev          # http://localhost:9080, hot reload
 ## Endpoints
 
 Every `/api` endpoint requires `Authorization: Bearer <token>` with the `user`
-or `admin` realm role — no token is a **401**, someone else's board is a **403**.
+or `admin` realm role — no token is a **401**. A board is accessible to its owner,
+its members and admins; other users receive **403**. Members can work on cards
+and columns, but only the owner or an admin can rename/delete the board or
+change its membership.
 
 | Method | Path                     | Description                                   |
 |--------|--------------------------|-----------------------------------------------|
-| GET    | `/api/boards`            | All boards, sorted by name                    |
+| GET    | `/api/boards`            | Owned and shared boards, sorted by name (all for admins) |
 | POST   | `/api/boards`            | Create a board (+ "To do"/"Doing"/"Done")     |
 | GET    | `/api/boards/{id}`       | One board                                     |
 | PUT    | `/api/boards/{id}`       | Rename a board                                |
 | DELETE | `/api/boards/{id}`       | Delete a board and its columns                |
+| GET    | `/api/boards/{id}/members` | List the members (owner, members and admins) |
+| POST   | `/api/boards/{id}/members` | Add a member: `{ "username": "bob" }` (owner/admin) |
+| DELETE | `/api/boards/{id}/members/{username}` | Remove a member (owner/admin) |
 | GET    | `/api/boards/{id}/lists` | Columns of a board, by position               |
 | POST   | `/api/boards/{id}/lists` | Add a column                                  |
 | GET    | `/api/lists/{id}`        | One column                                    |
@@ -175,8 +183,8 @@ $payload += '=' * ((4 - $payload.Length % 4) % 4)
   JWKS URL and the expected audience are plain MicroProfile Config properties in
   `microprofile-config.properties`, not Liberty-specific `server.xml` elements.
   `backend/.../security/` holds the two beans on top of that: `CurrentUser`
-  (who is calling, are they an admin) and `BoardAccess` (does this board — or
-  the board this column/card belongs to — belong to them).
+  (who is calling, are they an admin) and `BoardAccess` (collaborator access to
+  the board and its contents, or owner-only access to board management).
 - The backend reaches Keycloak at `keycloak:8080` while the browser reaches it
   at `localhost:8081`. The JWKS fetch uses the first, the `iss` claim in the
   token is the second: they are different URLs for the same server and both
@@ -187,3 +195,13 @@ $payload += '=' * ((4 - $payload.Length % 4) % 4)
   (redirects to the Keycloak login page). `BoardService` never mentions a token.
 - Angular 20 is used; it requires Node >= 20.19 (or 22.12+). The Dev Container
   ships Node 22, so there is no host Node version to worry about.
+
+## Board sharing
+
+The board detail view lists members. Owners and admins can add a username or
+remove a member; other members can only read this panel. Removing a member
+revokes access on their next API request. Duplicate memberships and attempts
+to add or remove the owner return **400**. No notification or live refresh is
+required: reload the page to see changes made in another session.
+
+See [the implementation notes and verification checklist](docs/board-sharing.md).

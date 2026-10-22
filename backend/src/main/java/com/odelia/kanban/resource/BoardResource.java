@@ -2,7 +2,9 @@ package com.odelia.kanban.resource;
 
 import com.odelia.kanban.entity.Board;
 import com.odelia.kanban.entity.BoardList;
+import com.odelia.kanban.entity.BoardMember;
 import com.odelia.kanban.repository.BoardListRepository;
+import com.odelia.kanban.repository.BoardMemberRepository;
 import com.odelia.kanban.repository.BoardRepository;
 import com.odelia.kanban.repository.CardRepository;
 import com.odelia.kanban.security.BoardAccess;
@@ -12,6 +14,8 @@ import jakarta.enterprise.context.RequestScoped;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
+import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.GET;
@@ -29,7 +33,10 @@ import org.eclipse.microprofile.openapi.annotations.Operation;
 import org.eclipse.microprofile.openapi.annotations.security.SecurityRequirement;
 
 import java.time.LocalDateTime;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * CRUD over boards, plus the lists (columns) they contain.
@@ -65,16 +72,28 @@ public class BoardResource {
     @Inject
     CardRepository cards;
 
+    @Inject
+    BoardMemberRepository members;
+
     @Context
     UriInfo uriInfo;
 
-    /** The caller's own boards - or every board, for an admin. */
+    /** Owned and shared boards, without duplicates; admins see every board. */
     @GET
     @Operation(operationId = "getBoards")
     public List<Board> listBoards() {
-        return currentUser.isAdmin()
-                ? boards.findAllSortedByName()
-                : boards.findByOwnerOrderByNameAsc(currentUser.name());
+        if (currentUser.isAdmin()) {
+            return boards.findAllSortedByName();
+        }
+        String username = currentUser.name();
+        Map<Long, Board> visible = new LinkedHashMap<>();
+        for (Board board : boards.findByOwnerOrderByNameAsc(username)) {
+            visible.put(board.getId(), board);
+        }
+        for (BoardMember member : members.findByUsername(username)) {
+            boards.findById(member.getBoardId()).ifPresent(board -> visible.put(board.getId(), board));
+        }
+        return visible.values().stream().sorted(Comparator.comparing(Board::getName)).toList();
     }
 
     @GET
@@ -110,6 +129,7 @@ public class BoardResource {
     @Transactional
     public Board updateBoard(@PathParam("id") long id, @Valid Board board) {
         Board existing = accessibleBoard(id);
+        access.requireBoardOwner(existing);
         existing.setName(board.getName());
         return boards.save(existing);
     }
@@ -119,10 +139,12 @@ public class BoardResource {
     @Transactional
     public Response deleteBoard(@PathParam("id") long id) {
         Board existing = accessibleBoard(id);
+        access.requireBoardOwner(existing);
         for (BoardList column : lists.findByBoardIdOrderByPositionAsc(id)) {
             cards.deleteByListId(column.getId());
         }
         lists.deleteByBoardId(id);
+        members.deleteByBoardId(id);
         boards.delete(existing);
         return Response.noContent().build();
     }
@@ -147,7 +169,48 @@ public class BoardResource {
                        .build();
     }
 
-    /** Loads a board the caller is allowed to work on: 404 if it is gone, 403 if it is not theirs. */
+    @GET
+    @Path("/{id}/members")
+    public List<BoardMember> listMembers(@PathParam("id") long id) {
+        accessibleBoard(id);
+        return members.findByBoardIdOrderByUsernameAsc(id);
+    }
+
+    @POST
+    @Path("/{id}/members")
+    @Transactional
+    public Response addMember(@PathParam("id") long id, @NotNull @Valid MemberCommand command) {
+        Board board = accessibleBoard(id);
+        access.requireBoardOwner(board);
+        String username = command.username().trim();
+        if (username.equals(board.getOwner())) {
+            throw new BadRequestException("The owner already has access to this board");
+        }
+        if (members.countByBoardIdAndUsername(id, username) > 0) {
+            throw new BadRequestException("This user is already a member of the board");
+        }
+        BoardMember created = members.insert(new BoardMember(id, username));
+        return Response.created(uriInfo.getAbsolutePathBuilder().path(username).build())
+                       .entity(created)
+                       .build();
+    }
+
+    @DELETE
+    @Path("/{id}/members/{username}")
+    @Transactional
+    public Response removeMember(@PathParam("id") long id, @PathParam("username") String username) {
+        Board board = accessibleBoard(id);
+        access.requireBoardOwner(board);
+        if (username.equals(board.getOwner())) {
+            throw new BadRequestException("The owner cannot be removed from the board");
+        }
+        BoardMember member = members.findByBoardIdAndUsername(id, username).orElseThrow(
+                () -> new WebApplicationException("No such member on this board", Response.Status.NOT_FOUND));
+        members.delete(member);
+        return Response.noContent().build();
+    }
+
+    /** Missing boards return 404; existing boards require collaborator access. */
     private Board accessibleBoard(long id) {
         Board board = boards.findById(id).orElseThrow(() -> notFound(id));
         access.requireBoardAccess(board);

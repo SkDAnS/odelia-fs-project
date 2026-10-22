@@ -38,8 +38,7 @@ import java.util.List;
  *
  * <p>Like columns, a card inherits its owner from the board it ultimately
  * belongs to, so every endpoint goes through {@link BoardAccess}. {@code /move}
- * checks both ends: you cannot drop one of your cards onto someone else's
- * board.</p>
+ * checks both ends: both boards must be accessible to the caller.</p>
  */
 @Path("/cards")
 @RequestScoped
@@ -118,7 +117,7 @@ public class CardResource {
         return moved;
     }
 
-    /** Loads a card on a board the caller owns: 404 if it is gone, 403 if the board is not theirs. */
+    /** Loads a card: 404 if missing, 403 unless the caller can access its board. */
     private Card accessibleCard(long id) {
         Card card = cards.findById(id).orElseThrow(() -> notFound(id));
         access.requireCardAccess(card);
