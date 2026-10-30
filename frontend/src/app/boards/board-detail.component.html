@@ -3,6 +3,33 @@
 
   @if (board(); as b) {
     <h2>{{ b.name }}</h2>
+    <section class="members" aria-labelledby="members-title">
+      <h3 id="members-title">Members</h3>
+      <p class="muted">Owner: {{ b.owner }}</p>
+      <ul class="member-list">
+        @for (member of members(); track member.username) {
+          <li>
+            <span>{{ member.username }}</span>
+            @if (canManageMembers()) {
+              <button type="button" class="member-remove" [disabled]="savingMembers()"
+                [attr.aria-label]="'Remove ' + member.username" (click)="removeMember(member)">
+                Remove
+              </button>
+            }
+          </li>
+        } @empty {
+          <li class="muted">No members yet.</li>
+        }
+      </ul>
+      @if (canManageMembers()) {
+        <form class="new-member" (ngSubmit)="addMember()">
+          <input name="memberUsername" [(ngModel)]="newMemberUsername"
+            placeholder="Username" aria-label="Member username" autocomplete="off"
+            maxlength="120" [disabled]="savingMembers()" />
+          <button type="submit" [disabled]="!newMemberUsername.trim() || savingMembers()">Add member</button>
+        </form>
+      }
+    </section>
   }
 
   @if (error()) {

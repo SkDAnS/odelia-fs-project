@@ -1,4 +1,5 @@
-import { Component, ElementRef, OnInit, inject, signal, viewChildren } from '@angular/core';
+import { Component, ElementRef, OnInit, computed, inject, signal, viewChildren } from '@angular/core';
+import { HttpErrorResponse } from '@angular/common/http';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import {
@@ -9,9 +10,10 @@ import {
   moveItemInArray,
   transferArrayItem
 } from '@angular/cdk/drag-drop';
-import { forkJoin } from 'rxjs';
+import { finalize, forkJoin } from 'rxjs';
 
-import { Board, BoardList, Card } from '../models/board';
+import { Board, BoardList, BoardMember, Card } from '../models/board';
+import { AuthService } from '../auth/auth.service';
 import { BoardService } from '../services/board.service';
 
 /**
@@ -40,8 +42,16 @@ import { BoardService } from '../services/board.service';
 export class BoardDetailComponent implements OnInit {
   private readonly route = inject(ActivatedRoute);
   private readonly boardService = inject(BoardService);
+  private readonly auth = inject(AuthService);
 
   readonly board = signal<Board | null>(null);
+  readonly members = signal<BoardMember[]>([]);
+  readonly savingMembers = signal(false);
+  readonly canManageMembers = computed(() => {
+    const board = this.board();
+    return board !== null && (this.auth.isAdmin() || board.owner === this.auth.username());
+  });
+  newMemberUsername = '';
   readonly columns = signal<BoardList[]>([]);
   /** Cards keyed by column id. The arrays are mutated in place by the CDK helpers. */
   readonly cardsByList = signal<Record<number, Card[]>>({});
@@ -76,17 +86,68 @@ export class BoardDetailComponent implements OnInit {
     this.error.set(null);
     this.editingCardId.set(null);
     this.composingColumnId.set(null);
-    this.boardService.getBoard(this.boardId).subscribe({
-      next: board => this.board.set(board),
-      error: err => this.fail('Could not load the board', err)
-    });
-    this.boardService.getLists(this.boardId).subscribe({
-      next: columns => {
+    this.board.set(null);
+    this.members.set([]);
+    this.columns.set([]);
+    this.cardsByList.set({});
+    forkJoin({
+      board: this.boardService.getBoard(this.boardId),
+      columns: this.boardService.getLists(this.boardId),
+      members: this.boardService.getMembers(this.boardId)
+    }).subscribe({
+      next: ({ board, columns, members }) => {
+        this.board.set(board);
+        this.members.set(members);
         this.columns.set(columns);
         this.loadCards(columns);
       },
-      error: err => this.fail('Could not load the columns', err)
+      error: err => this.fail('Could not load the board', err)
     });
+  }
+
+  addMember(): void {
+    const username = this.newMemberUsername.trim();
+    if (!username || !this.canManageMembers() || this.savingMembers()) {
+      return;
+    }
+    this.error.set(null);
+    this.savingMembers.set(true);
+    this.boardService.addMember(this.boardId, username)
+      .pipe(finalize(() => this.savingMembers.set(false)))
+      .subscribe({
+        next: member => {
+          this.members.update(members => [...members, member]
+            .sort((a, b) => a.username.localeCompare(b.username)));
+          this.newMemberUsername = '';
+        },
+        error: err => this.membershipFailed('add the member', err)
+      });
+  }
+
+  removeMember(member: BoardMember): void {
+    if (!this.canManageMembers() || this.savingMembers()) {
+      return;
+    }
+    this.error.set(null);
+    this.savingMembers.set(true);
+    this.boardService.removeMember(this.boardId, member.username)
+      .pipe(finalize(() => this.savingMembers.set(false)))
+      .subscribe({
+        next: () => this.members.update(members => members.filter(m => m.username !== member.username)),
+        error: err => this.membershipFailed('remove the member', err)
+      });
+  }
+
+  private membershipFailed(action: string, err: HttpErrorResponse): void {
+    let detail = '';
+    if (err.status === 400) {
+      detail = ' Check the username: the owner cannot be added or removed, and a user cannot be added twice.';
+    } else if (err.status === 403) {
+      detail = ' Only the owner or an administrator can manage members.';
+    } else if (err.status === 404) {
+      detail = ' The board or member no longer exists. Reload the board and try again.';
+    }
+    this.fail(`Could not ${action}.${detail}`, err);
   }
 
   cardsFor(listId: number): Card[] {

@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 
 import { Board } from '../models/board';
+import { AuthService } from '../auth/auth.service';
 import { BoardService } from '../services/board.service';
 
 /**
@@ -18,6 +19,7 @@ import { BoardService } from '../services/board.service';
 })
 export class BoardListComponent implements OnInit {
   private readonly boardService = inject(BoardService);
+  readonly auth = inject(AuthService);
 
   readonly boards = signal<Board[]>([]);
   readonly loading = signal(false);
@@ -57,7 +59,7 @@ export class BoardListComponent implements OnInit {
   }
 
   deleteBoard(board: Board): void {
-    if (board.id === undefined) {
+    if (board.id === undefined || !this.canManage(board)) {
       return;
     }
     if (!confirm(`Delete board "${board.name}"? This cannot be undone.`)) {
@@ -68,6 +70,10 @@ export class BoardListComponent implements OnInit {
       next: () => this.boards.update(boards => boards.filter(b => b.id !== board.id)),
       error: err => this.fail(`Could not delete the board "${board.name}"`, err)
     });
+  }
+
+  canManage(board: Board): boolean {
+    return this.auth.isAdmin() || board.owner === this.auth.username();
   }
 
   private fail(message: string, err: unknown): void {

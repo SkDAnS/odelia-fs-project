@@ -9,6 +9,69 @@
   font-size: 0.9rem;
 }
 
+.members {
+  margin-bottom: 1.25rem;
+  padding: 1rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+
+.members h3,
+.members p {
+  margin: 0 0 0.5rem;
+}
+
+.member-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 0.75rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.member-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.6rem;
+  background: #f1f5f9;
+  border-radius: 6px;
+  overflow-wrap: anywhere;
+}
+
+.new-member {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.new-member input,
+.new-member button,
+.member-remove {
+  padding: 0.4rem 0.6rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font: inherit;
+}
+
+.new-member button {
+  background: #2563eb;
+  color: #fff;
+  cursor: pointer;
+}
+
+.member-remove {
+  background: #fff;
+  color: #b91c1c;
+  cursor: pointer;
+}
+
+.members button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 h2 {
   margin: 0.5rem 0 1.25rem;
 }
